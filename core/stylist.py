@@ -1,159 +1,5 @@
-# import json
-# from datetime import datetime, timedelta
-# import ollama
-#
-# from core.database import get_active_wardrobe, load_config
-# from core.weather import get_event_weather
-#
-# CONFIG = load_config()
-#
-# LOCAL_MODEL = 'llama3.1'
-#
-#
-# def parse_user_intent(user_prompt):
-#     now = datetime.now()
-#     default_end = now + timedelta(hours=2)
-#     default_city = CONFIG['user']['location']['default_city']
-#
-#     prompt = f"""
-#         Current Date/Time: {now.strftime("%Y-%m-%d %H:%M")}
-#         Default City: {default_city}
-#
-#         Analyze this user request: "{user_prompt}"
-#
-#         Extract the following into a raw JSON object:
-#         - "occasion": What are they doing? (e.g., "Software engineer code review", "Dinner")
-#         - "occasion_type": Classify this strictly as either "work" or "personal".
-#         - "city": The highly specific location mentioned, including street, neighborhood, or building (e.g., "Lehrter Str, Berlin"). If none mentioned, use Default City.
-#         - "start_time": Estimated start time (ISO format string). If not mentioned, use Current Date/Time.
-#         - "end_time": Estimated end time (ISO format string). If not mentioned, use Current Date/Time + 2 hours.
-#         """
-#
-#     try:
-#         response = ollama.chat(model=LOCAL_MODEL, messages=[
-#             {'role': 'user', 'content': prompt}
-#         ], format='json')
-#
-#         return json.loads(response['message']['content'])
-#     except Exception as e:
-#         print(f"Failed to parse intent: {e}")
-#         return {
-#             "occasion": user_prompt,
-#             "occasion_type": "personal",
-#             "city": default_city,
-#             "start_time": now.isoformat(),
-#             "end_time": default_end.isoformat()
-#         }
-#
-#
-# def generate_outfit(user_prompt):
-#
-#     intent = parse_user_intent(user_prompt)
-#     print(f"Extracted Intent: {intent.get('occasion')} in {intent.get('city')} (Type: {intent.get('occasion_type')})")
-#
-#     weather_data = get_event_weather(intent.get('city', 'Berlin'), intent.get('start_time'), intent.get('end_time'))
-#
-#     weather_filter = 'hot' if weather_data['max_temp'] > 18 else 'cold' if weather_data['min_temp'] < 10 else None
-#     wardrobe_items = get_active_wardrobe(weather_filter)
-#
-#     if len(wardrobe_items) == 0:
-#         return {
-#             "error": "Your digital wardrobe is empty! 🧥\n\nPlease drop some photos into `data/raw_uploads/`, run `python core/ingestion.py`, and hit 'Refresh' on the page.",
-#             "intent": intent,
-#             "weather": weather_data
-#         }
-#
-#     wardrobe_json = json.dumps([{
-#         "id": item['item_id'], "category": item['category'], "sub_category": item['sub_category'],
-#         "color": item['color_hex'], "formality": item['formality_score']
-#     } for item in wardrobe_items], indent=2)
-#
-#     is_work = intent.get('occasion_type') == 'work'
-#     active_style = CONFIG['user']['style_rules']['work'] if is_work else CONFIG['user']['style_rules']['default']
-#
-#     prompt = f"""
-#         You are a high-end {CONFIG['user'].get('stylist_country', 'global')} personal stylist.
-#         The user needs an outfit for: "{intent.get('occasion')}" in {intent.get('city')}.
-#
-#         Context:
-#         - Weather Window: {weather_data['desc']} (Max: {weather_data['max_temp']}°C, Min: {weather_data['min_temp']}°C)
-#         - Skin Tone Hex: {CONFIG['user']['skin_tone_hex']}
-#         - Target Aesthetic: {active_style}.
-#
-#         Available wardrobe:
-#         {wardrobe_json}
-#
-#         Select the best combination.
-#
-#         CRITICAL RULES:
-#         1. The outfit MUST contain exactly one "upper", one "lower", and one "shoes". This is non-negotiable.
-#         2. You may optionally add an "accessory" or an "outerwear" (layer) if the weather or occasion demands it.
-#         3. Match the IDs precisely from the provided wardrobe list.
-#
-#         Return ONLY a JSON object exactly matching this structure (use null for Outerwear or Accessories if skipping):
-#         {{
-#           "outfit": {{
-#             "Upper Wear": "item_id",
-#             "Lower Wear": "item_id",
-#             "Outerwear": "item_id_or_null",
-#             "Shoes": "item_id",
-#             "Accessories": "item_id_or_null"
-#           }},
-#           "reasoning": "A 2-3 sentence explanation of why this outfit works based strictly on the items chosen above."
-#         }}
-#         """
-#
-#
-#     try:
-#         # print("Consulting local Ollama stylist...")
-#         # response = ollama.chat(
-#         #     model=LOCAL_MODEL,
-#         #     messages=[{'role': 'user', 'content': prompt}],
-#         #     format='json',
-#         #     options={'temperature': 0.9}
-#         # )
-#         #
-#         # result = json.loads(response['message']['content'])
-#         # result['intent'] = intent
-#         # result['weather'] = weather_data
-#         # return result
-#         max_retries = 3
-#
-#         for attempt in range(max_retries):
-#             try:
-#                 print(f"🧠 Consulting local Ollama stylist (Attempt {attempt + 1}/{max_retries})...")
-#                 response = ollama.chat(
-#                     model=LOCAL_MODEL,
-#                     messages=[{'role': 'user', 'content': prompt}],
-#                     format='json',
-#                     options={'temperature': 0.5}
-#                 )
-#
-#                 result = json.loads(response['message']['content'])
-#
-#                 outfit = result.get('outfit', {})
-#                 has_upper = bool(outfit.get('Upper Wear'))
-#                 has_lower = bool(outfit.get('Lower Wear'))
-#                 has_shoes = bool(outfit.get('Shoes'))
-#
-#                 if has_upper and has_lower and has_shoes:
-#                     result['intent'] = intent
-#                     result['weather'] = weather_data
-#                     return result
-#                 else:
-#                     print("⚠️ AI forgot a core item (Upper, Lower, or Shoes). Forcing a retry...")
-#
-#             except Exception as e:
-#                 print(f"Error parsing AI response: {e}")
-#
-#         return {
-#             "error": "The stylist is having trouble putting together a complete outfit right now. Please try clicking 'Generate' again!"}
-#
-#     except Exception as e:
-#         return {"error": f"Local AI failed to generate outfit: {e}"}
-
-
 import json
+import difflib
 from datetime import datetime, timedelta
 import ollama
 
@@ -161,7 +7,6 @@ from core.database import get_active_wardrobe, load_config
 from core.weather import get_event_weather
 
 CONFIG = load_config()
-
 LOCAL_MODEL = 'llama3.1'
 
 
@@ -177,50 +22,62 @@ def parse_user_intent(user_prompt):
     Analyze this user request: "{user_prompt}"
 
     Extract the following into a raw JSON object:
-    - "occasion": What are they doing? (e.g., "Software engineer code review", "Dinner")
+    - "occasion": What are they doing?
     - "occasion_type": Classify this strictly as either "work" or "personal".
-    - "city": The highly specific location mentioned, including street, neighborhood, or building (e.g., "Invalidenstr, Berlin"). If none mentioned, use Default City.
+    - "city": The highly specific location mentioned. If none, use Default City.
     - "start_time": Estimated start time (ISO format string). If not mentioned, use Current Date/Time.
     - "end_time": Estimated end time (ISO format string). If not mentioned, use Current Date/Time + 2 hours.
     """
 
     try:
-        response = ollama.chat(model=LOCAL_MODEL, messages=[
-            {'role': 'user', 'content': prompt}
-        ], format='json')
-
+        response = ollama.chat(model=LOCAL_MODEL, messages=[{'role': 'user', 'content': prompt}], format='json')
         return json.loads(response['message']['content'])
     except Exception as e:
         print(f"Failed to parse intent: {e}")
         return {
-            "occasion": user_prompt,
-            "occasion_type": "personal",
-            "city": default_city,
-            "start_time": now.isoformat(),
-            "end_time": default_end.isoformat()
+            "occasion": user_prompt, "occasion_type": "personal", "city": default_city,
+            "start_time": now.isoformat(), "end_time": default_end.isoformat()
         }
+
+
+def find_best_match(target_category, ideal_desc, target_formality, active_wardrobe):
+
+    candidates = [item for item in active_wardrobe if item['category'] == target_category]
+    if not candidates:
+        return None
+
+    best_item = None
+    best_score = -100
+
+    for item in candidates:
+        item_str = f"{item['color_hex'] or ''} {item['sub_category']}".lower().replace('_', ' ')
+
+        text_score = difflib.SequenceMatcher(None, ideal_desc.lower(), item_str).ratio()
+
+        item_form = item['formality_score'] if item['formality_score'] is not None else 5
+        form_penalty = abs(item_form - target_formality) / 10.0
+
+        final_score = text_score - (form_penalty * 0.4)
+
+        if final_score > best_score:
+            best_score = final_score
+            best_item = item['item_id']
+
+    return best_item
 
 
 def generate_outfit(user_prompt):
     intent = parse_user_intent(user_prompt)
-    print(f"🎯 Extracted Intent: {intent.get('occasion')} in {intent.get('city')} (Type: {intent.get('occasion_type')})")
+    print(f"Extracted Intent: {intent.get('occasion')} in {intent.get('city')} (Type: {intent.get('occasion_type')})")
 
     weather_data = get_event_weather(intent.get('city', 'Berlin'), intent.get('start_time'), intent.get('end_time'))
 
-    weather_filter = 'hot' if weather_data['max_temp'] > 18 else 'cold' if weather_data['min_temp'] < 10 else None
+    weather_filter = 'hot' if weather_data['max_temp'] > 25 else 'cold' if weather_data['min_temp'] < 15 else None
     wardrobe_items = get_active_wardrobe(weather_filter)
 
     if len(wardrobe_items) == 0:
-        return {
-            "error": "Your digital wardrobe is empty or has no suitable items for this weather! 🧥\n\nPlease drop some photos into `data/raw_uploads/`, run `python core/ingestion.py`, and hit 'Refresh' on the page.",
-            "intent": intent,
-            "weather": weather_data
-        }
-
-    wardrobe_json = json.dumps([{
-        "id": item['item_id'], "category": item['category'], "sub_category": item['sub_category'],
-        "color": item['color_hex'], "formality": item['formality_score']
-    } for item in wardrobe_items], indent=2)
+        return {"error": "Your digital wardrobe is empty or has no suitable items for this weather!", "intent": intent,
+                "weather": weather_data}
 
     is_work = intent.get('occasion_type') == 'work'
     active_style = CONFIG['user']['style_rules']['work'] if is_work else CONFIG['user']['style_rules']['default']
@@ -231,46 +88,32 @@ def generate_outfit(user_prompt):
     The user needs an outfit for: "{intent.get('occasion')}" in {intent.get('city')}.
 
     Context:
-    - Weather Window: {weather_data['desc']} (Max: {weather_data['max_temp']}°C, Min: {weather_data['min_temp']}°C)
-    - Skin Tone Hex: {CONFIG['user']['skin_tone_hex']}
+    - Weather Window: {weather_data['desc']}
     - Target Aesthetic: {active_style}.
 
-    Available wardrobe:
-    {wardrobe_json}
-
-    Select the best combination. 
+    Design the absolute PERFECT outfit for this occasion.
 
     CRITICAL RULES:
-    1. The outfit MUST contain exactly one "upper", one "lower", and one "shoes". This is non-negotiable.
-    2. You may optionally add an "accessory" or an "outerwear" (layer) if the weather or occasion demands it.
-    3. Match the IDs precisely from the provided wardrobe list.
+    1. You MUST include "Upper Wear", "Lower Wear", and "Shoes".
+    2. "Outerwear" and "Accessories" are optional (use null if not needed).
 
-    Return ONLY a JSON object exactly matching this structure (use null for Outerwear or Accessories if skipping):
+    Return ONLY a JSON object exactly matching this structure:
     {{
-      "outfit": {{
-        "Upper Wear": "item_id",
-        "Lower Wear": "item_id",
-        "Outerwear": "item_id_or_null",
-        "Shoes": "item_id",
-        "Accessories": "item_id_or_null"
-      }},
-      "reasoning": "A 2-3 sentence explanation of why this outfit works based strictly on the items chosen above."
+      "reasoning": "A 2-3 sentence explanation of the look.",
+      "ideal_outfit": {{
+        "Upper Wear": {{"description": "e.g., light blue cotton button-down shirt", "formality": 6}},
+        "Lower Wear": {{"description": "e.g., dark wash denim jeans", "formality": 4}},
+        "Outerwear": null,
+        "Shoes": {{"description": "e.g., white leather sneakers", "formality": 3}},
+        "Accessories": {{"description": "e.g., silver watch", "formality": 5}}
+      }}
     }}
     """
 
     max_retries = 3
-
-    valid_uppers = [str(item['item_id']) for item in wardrobe_items if item['category'] == 'upper']
-    valid_lowers = [str(item['item_id']) for item in wardrobe_items if item['category'] == 'lower']
-    valid_shoes = [str(item['item_id']) for item in wardrobe_items if item['category'] == 'shoes']
-
-    if not valid_uppers or not valid_lowers or not valid_shoes:
-        return {
-            "error": "Your wardrobe is missing core items! You need at least one Upper, one Lower, and one pair of Shoes saved in your closet before I can style you."}
-
     for attempt in range(max_retries):
         try:
-            print(f"🧠 Consulting local Ollama stylist (Attempt {attempt + 1}/{max_retries})...")
+            print(f"Consulting local AI Stylist (Attempt {attempt + 1}/{max_retries})...")
             response = ollama.chat(
                 model=LOCAL_MODEL,
                 messages=[{'role': 'user', 'content': prompt}],
@@ -279,22 +122,39 @@ def generate_outfit(user_prompt):
             )
 
             result = json.loads(response['message']['content'])
+            ideal_outfit = result.get('ideal_outfit', {})
 
-            outfit = result.get('outfit', {})
+            if not ideal_outfit.get('Upper Wear') or not ideal_outfit.get('Lower Wear') or not ideal_outfit.get(
+                    'Shoes'):
+                print("⚠️ AI skipped a core category. Retrying...")
+                continue
 
-            has_upper = str(outfit.get('Upper Wear')) in valid_uppers
-            has_lower = str(outfit.get('Lower Wear')) in valid_lowers
-            has_shoes = str(outfit.get('Shoes')) in valid_shoes
+            # THE SEMANTIC MATCHING PIPELINE
+            print("Matching AI's dream outfit to your actual wardrobe...")
+            final_outfit = {}
 
-            if has_upper and has_lower and has_shoes:
-                result['intent'] = intent
-                result['weather'] = weather_data
-                return result
-            else:
-                print("AI hallucinated a fake ID or used the wrong category! Forcing a retry...")
+            category_mapping = {
+                'Upper Wear': 'upper',
+                'Lower Wear': 'lower',
+                'Outerwear': 'upper',
+                'Shoes': 'shoes',
+                'Accessories': 'accessory'
+            }
+
+            for key, db_cat in category_mapping.items():
+                target = ideal_outfit.get(key)
+                if target and isinstance(target, dict):
+                    match_id = find_best_match(db_cat, target.get('description', ''), target.get('formality', 5),
+                                               wardrobe_items)
+                    if match_id:
+                        final_outfit[key] = match_id
+
+            result['outfit'] = final_outfit
+            result['intent'] = intent
+            result['weather'] = weather_data
+            return result
 
         except Exception as e:
-            print(f"Error parsing AI response on attempt {attempt + 1}: {e}")
+            print(f"⚠️ Error on attempt {attempt + 1}: {e}")
 
-    return {
-        "error": "The stylist is having trouble putting together a complete outfit right now. Please try clicking 'Generate Outfit' again!"}
+    return {"error": "The stylist failed to generate an outfit."}
