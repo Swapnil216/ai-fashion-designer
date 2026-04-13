@@ -1,0 +1,23 @@
+# User Style Profile
+user:
+  # The HEX code for your skin tone
+  skin_tone_hex: "#F4B182"
+  location:
+    default_city: "Berlin"
+
+  # The AI will use these tags to guide its styling choices
+  style_rules:
+    work: "Tech-Minimalist, smart, practical"
+    default: "Smart Casual, sharp, clean, well-put-together"
+
+  # Colors you absolutely hate wearing
+  avoided_colors:
+    - "Neon Green"
+
+  stylist_country:
+    - "European"
+
+# System Settings
+system:
+  db_path: "data/wardrobe.db"
+  image_save_path: "data/processed_items/"
