@@ -1,5 +1,7 @@
+# core/stylist.py
 import json
 import difflib
+import random
 from datetime import datetime, timedelta
 import ollama
 
@@ -15,16 +17,25 @@ def parse_user_intent(user_prompt):
     default_end = now + timedelta(hours=2)
     default_city = CONFIG['user']['location'].get('default_city', 'Berlin')
 
+    aliases = CONFIG['user']['location'].get('aliases', {})
+    if aliases:
+        alias_str = "Known Locations Map:\n" + "\n".join(
+            [f"- If user says '{k}', use exact location: '{v}'" for k, v in aliases.items()])
+    else:
+        alias_str = ""
+
     prompt = f"""
     Current Date/Time: {now.strftime("%Y-%m-%d %H:%M")}
     Default City: {default_city}
+
+    {alias_str}
 
     Analyze this user request: "{user_prompt}"
 
     Extract the following into a raw JSON object:
     - "occasion": What are they doing?
     - "occasion_type": Classify this strictly as either "work" or "personal".
-    - "city": The highly specific location mentioned. If none, use Default City.
+    - "city": The highly specific location. (Check the 'Known Locations Map' above. If the user mentions a mapped location like 'office' or 'home', output the exact street address mapped to it. If not mapped, use exactly what they said).
     - "start_time": Estimated start time (ISO format string). If not mentioned, use Current Date/Time.
     - "end_time": Estimated end time (ISO format string). If not mentioned, use Current Date/Time + 2 hours.
     """
@@ -65,24 +76,17 @@ def find_best_match(target_category, ideal_desc, target_formality, active_wardro
             last_worn_date = datetime.strptime(item['last_worn'], "%Y-%m-%d")
             days_since_worn = (datetime.now() - last_worn_date).days
 
-            # Apply different rules based on the type of clothing
             if target_category == 'upper':
-                # Shirts/Tops: Strict 7-day cooldown. Highly penalized if worn recently.
                 if days_since_worn < 7:
                     wear_penalty = (7 - days_since_worn) / 7.0
-
             elif target_category == 'lower':
-                # Pants/Jeans: Relaxed 3-day cooldown. Penalty is cut in half.
                 if days_since_worn < 3:
                     wear_penalty = ((3 - days_since_worn) / 3.0) * 0.5
-
             else:
-                # Accessories, Shoes, Outerwear: Almost zero penalty.
-                # (We add a tiny 0.1 penalty just to prevent wearing it 2 days in a row if there is a perfect alternative, otherwise it gets ignored).
                 if days_since_worn < 2:
                     wear_penalty = 0.1
 
-                    #Tie-Breaker Noise
+        #Tie-Breaker Noise
         shuffle_noise = random.uniform(0.0, 0.05)
 
         # Final Score
