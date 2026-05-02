@@ -41,7 +41,7 @@ def parse_user_intent(user_prompt):
 
 
 def find_best_match(target_category, ideal_desc, target_formality, active_wardrobe):
-
+    """Pass 3: Semantic matching with Category-Aware Wear Fatigue."""
     candidates = [item for item in active_wardrobe if item['category'] == target_category]
     if not candidates:
         return None
@@ -52,12 +52,41 @@ def find_best_match(target_category, ideal_desc, target_formality, active_wardro
     for item in candidates:
         item_str = f"{item['color_hex'] or ''} {item['sub_category']}".lower().replace('_', ' ')
 
+        #Text Similarity (0.0 to 1.0)
         text_score = difflib.SequenceMatcher(None, ideal_desc.lower(), item_str).ratio()
 
+        #Formality Penalty (0.0 to 1.0)
         item_form = item['formality_score'] if item['formality_score'] is not None else 5
         form_penalty = abs(item_form - target_formality) / 10.0
 
-        final_score = text_score - (form_penalty * 0.4)
+        #CATEGORY-AWARE WEAR FATIGUE
+        wear_penalty = 0.0
+        if 'last_worn' in item.keys() and item['last_worn']:
+            last_worn_date = datetime.strptime(item['last_worn'], "%Y-%m-%d")
+            days_since_worn = (datetime.now() - last_worn_date).days
+
+            # Apply different rules based on the type of clothing
+            if target_category == 'upper':
+                # Shirts/Tops: Strict 7-day cooldown. Highly penalized if worn recently.
+                if days_since_worn < 7:
+                    wear_penalty = (7 - days_since_worn) / 7.0
+
+            elif target_category == 'lower':
+                # Pants/Jeans: Relaxed 3-day cooldown. Penalty is cut in half.
+                if days_since_worn < 3:
+                    wear_penalty = ((3 - days_since_worn) / 3.0) * 0.5
+
+            else:
+                # Accessories, Shoes, Outerwear: Almost zero penalty.
+                # (We add a tiny 0.1 penalty just to prevent wearing it 2 days in a row if there is a perfect alternative, otherwise it gets ignored).
+                if days_since_worn < 2:
+                    wear_penalty = 0.1
+
+                    #Tie-Breaker Noise
+        shuffle_noise = random.uniform(0.0, 0.05)
+
+        # Final Score
+        final_score = text_score - (form_penalty * 0.4) - (wear_penalty * 0.8) + shuffle_noise
 
         if final_score > best_score:
             best_score = final_score

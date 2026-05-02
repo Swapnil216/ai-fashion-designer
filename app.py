@@ -3,15 +3,21 @@ import streamlit as st
 import os
 from core.stylist import generate_outfit
 from core.database import get_connection, retire_item, update_item
+from core.database import upgrade_db_schema, log_outfit_as_worn
 
 # Set layout to wide to accommodate the catalog grid
 st.set_page_config(page_title="AI Fashion Designer", page_icon="👔", layout="wide")
 
 st.title("👔 Local AI Stylist")
-
 # Define the two main views
 tab_stylist, tab_closet = st.tabs(["✨ Style Me", "🚪 My Closet"])
 
+@st.cache_resource
+def run_once_on_startup():
+    upgrade_db_schema()
+    return True
+
+run_once_on_startup()
 # ==========================================
 # TAB 1: THE STYLIST ENGINE
 # ==========================================
@@ -49,29 +55,24 @@ with tab_stylist:
             st.write(f"### 💡 Stylist Notes:\n{result['reasoning']}")
 
             st.write("### ✨ Your Outfit")
-            conn = get_connection()
-            cursor = conn.cursor()
 
-            # --- THE TRUE-CATEGORY OVERRIDE ---
             # --- THE TRUE-CATEGORY OVERRIDE ---
             if "outfit" in result:
-                # 1. Gather all IDs the AI picked
                 raw_ids = []
                 for _, item_data in result["outfit"].items():
-                    # Ignore nulls or placeholder strings the AI might hallucinate
                     if not item_data or str(item_data).lower() in ["null", "none", "item_id_or_null"]:
                         continue
-
                     if isinstance(item_data, list):
                         raw_ids.extend(item_data)
                     else:
                         raw_ids.append(item_data)
 
-                # Clean up IDs to prevent SQL errors
                 clean_ids = [str(i).strip() for i in raw_ids if str(i).strip()]
 
                 if clean_ids:
-                    # 2. Query the Database as the ultimate source of truth
+                    conn = get_connection()
+                    cursor = conn.cursor()
+
                     unique_ids = list(set(clean_ids))
                     placeholders = ','.join(['?'] * len(unique_ids))
 
@@ -79,8 +80,8 @@ with tab_stylist:
                         f"SELECT category, sub_category, color_hex, image_path FROM wardrobe WHERE item_id IN ({placeholders})",
                         tuple(unique_ids))
                     true_items = cursor.fetchall()
+                    conn.close()
 
-                    # 3. Group by the REAL database categories
                     display_groups = {}
                     for row in true_items:
                         cat_name = row['category'].title()
@@ -88,7 +89,6 @@ with tab_stylist:
                             display_groups[cat_name] = []
                         display_groups[cat_name].append(row)
 
-                    # 4. Render the UI in a logical visual order
                     display_order = ["Upper", "Lower", "Shoes", "Accessory"]
 
                     for target_cat in display_order:
@@ -106,10 +106,21 @@ with tab_stylist:
                                     else:
                                         st.warning("Image missing")
 
-            st.write("---")
-            if st.button("🎲 I don't like this, try another combination"):
-                fetch_new_outfit()
-                st.rerun()
+                    # --- MEMORY LOGGING & REROLL BUTTONS ---
+                    st.write("---")
+                    col_a, col_b = st.columns(2)
+
+                    with col_a:
+                        if st.button("👗 I'm wearing this! (Log to Memory)", type="primary", use_container_width=True):
+                            log_outfit_as_worn(clean_ids)
+                            st.success("Logged! These items will take a break before being recommended again.")
+                            st.balloons()
+
+                    with col_b:
+                        # Replaces the duplicate "try another" buttons with one clean column button
+                        if st.button("🎲 Not my vibe, try another", use_container_width=True):
+                            fetch_new_outfit()
+                            st.rerun()
 
 # ==========================================
 # TAB 2: THE WARDROBE CATALOG

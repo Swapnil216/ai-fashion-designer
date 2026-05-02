@@ -2,6 +2,7 @@ import sqlite3
 import uuid
 import os
 import yaml
+from datetime import datetime
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
@@ -102,6 +103,35 @@ def update_item(item_id, category, sub_category, color_hex, formality_score, wea
     ''', (category, sub_category, color_hex, formality_score, weather_suitability, item_id))
 
     conn.commit()
+    conn.close()
+
+def upgrade_db_schema():
+    """Safely adds the last_worn column to an existing database."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("ALTER TABLE wardrobe ADD COLUMN last_worn DATE DEFAULT NULL")
+        conn.commit()
+        print("✅ Database upgraded: Added memory tracking.")
+    except Exception:
+        # If the column already exists, SQLite throws an error, which we can safely ignore
+        pass
+    finally:
+        conn.close()
+
+def log_outfit_as_worn(item_ids):
+    """Updates the last_worn date for a list of items to today."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    # Filter out nulls/None
+    valid_ids = [str(i) for i in item_ids if i]
+
+    if valid_ids:
+        placeholders = ','.join(['?'] * len(valid_ids))
+        cursor.execute(f"UPDATE wardrobe SET last_worn = ? WHERE item_id IN ({placeholders})", [today] + valid_ids)
+        conn.commit()
     conn.close()
 
 init_db()
