@@ -10,7 +10,7 @@ def get_event_weather(location_string, start_time_iso, end_time_iso):
     geocode_url = f"https://nominatim.openstreetmap.org/search?q={location_string}&format=json&limit=1"
 
     try:
-        # --- 1. Geocoding ---
+        #Geocoding
         geo_response = requests.get(geocode_url, headers=headers).json()
         if not geo_response:
             print("⚠️ Geocoding failed. Falling back to default Berlin coordinates.")
@@ -19,8 +19,7 @@ def get_event_weather(location_string, start_time_iso, end_time_iso):
             lat = geo_response[0]['lat']
             lon = geo_response[0]['lon']
 
-        # --- 2. Hourly Weather Fetch ---
-        # FIXED: Changed weathercode to weather_code in the URL
+        #Hourly Weather Fetch
         weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=temperature_2m,precipitation_probability,weather_code&timezone=auto"
         response = requests.get(weather_url)
 
@@ -28,7 +27,7 @@ def get_event_weather(location_string, start_time_iso, end_time_iso):
         response.raise_for_status()
         data = response.json()
 
-        # --- 3. Parse Dates ---
+        #Parse Dates
         try:
             start_dt = datetime.fromisoformat(start_time_iso).replace(minute=0, second=0, microsecond=0)
             end_dt = datetime.fromisoformat(end_time_iso).replace(minute=0, second=0, microsecond=0)
@@ -36,7 +35,6 @@ def get_event_weather(location_string, start_time_iso, end_time_iso):
             start_dt = datetime.now().replace(minute=0, second=0, microsecond=0)
             end_dt = start_dt
 
-        # --- 4. Slice the Window ---
         api_times = [datetime.fromisoformat(t) for t in data['hourly']['time']]
         valid_indices = [i for i, t in enumerate(api_times) if start_dt <= t <= end_dt]
 
@@ -46,10 +44,9 @@ def get_event_weather(location_string, start_time_iso, end_time_iso):
         window_temps = [data['hourly']['temperature_2m'][i] for i in valid_indices]
         window_probs = [data['hourly']['precipitation_probability'][i] for i in valid_indices]
 
-        # FIXED: Changed to weather_code here as well
         window_codes = [data['hourly']['weather_code'][i] for i in valid_indices]
 
-        # --- 5. Calculate Event Metrics ---
+        #Calculate Event Metrics
         max_t = max(window_temps)
         min_t = min(window_temps)
         max_rain_chance = max(window_probs)
