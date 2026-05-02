@@ -25,7 +25,7 @@ def parse_user_intent(user_prompt):
         alias_str = ""
 
     prompt = f"""
-    Current Date/Time: {now.strftime("%Y-%m-%d %H:%M")}
+    Current Date/Time: {now.strftime("%Y-%m-%dT%H:00")}
     Default City: {default_city}
 
     {alias_str}
@@ -35,9 +35,9 @@ def parse_user_intent(user_prompt):
     Extract the following into a raw JSON object:
     - "occasion": What are they doing?
     - "occasion_type": Classify this strictly as either "work" or "personal".
-    - "city": The highly specific location. (Check the 'Known Locations Map' above. If the user mentions a mapped location like 'office' or 'home', output the exact street address mapped to it. If not mapped, use exactly what they said).
-    - "start_time": Estimated start time (ISO format string). If not mentioned, use Current Date/Time.
-    - "end_time": Estimated end time (ISO format string). If not mentioned, use Current Date/Time + 2 hours.
+    - "city": The highly specific location. (Check the 'Known Locations Map' above).
+    - "start_time": Estimated start time. MUST be in ISO format (YYYY-MM-DDTHH:00). If not mentioned, use Current Date/Time exactly.
+    - "end_time": Estimated end time. MUST be in ISO format (YYYY-MM-DDTHH:00). If not mentioned, calculate Start Time + 1 hour.
     """
 
     try:
